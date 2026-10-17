@@ -10,6 +10,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Google-hosted mirror of Maven Central, used if Central misses/hiccups on the CI runner.
+        maven("https://maven-central.storage-download.googleapis.com/maven2/")
     }
 }
 
