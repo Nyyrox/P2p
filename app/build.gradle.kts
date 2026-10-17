@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -18,7 +20,7 @@ android {
 
     // Signing: CI secrets (KEYSTORE_PATH env) win, else the bundled keystore.properties + app/release.jks.
     val envKeystore = System.getenv("KEYSTORE_PATH")
-    val keystoreProps = java.util.Properties().apply {
+    val keystoreProps = Properties().apply {
         val f = rootProject.file("keystore.properties")
         if (f.exists()) f.inputStream().use { load(it) }
     }
