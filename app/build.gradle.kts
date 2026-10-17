@@ -16,23 +16,36 @@ android {
         versionName = "1.0"
     }
 
+    // Signing: CI secrets (KEYSTORE_PATH env) win, else the bundled keystore.properties + app/release.jks.
+    val envKeystore = System.getenv("KEYSTORE_PATH")
+    val keystoreProps = java.util.Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    val hasReleaseKey = envKeystore != null || keystoreProps.isNotEmpty()
+
     signingConfigs {
-        create("release") {
-            val path = System.getenv("KEYSTORE_PATH")
-            if (path != null) {
-                storeFile = file(path)
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS")
-                keyPassword = System.getenv("KEY_PASSWORD")
+        if (hasReleaseKey) {
+            create("release") {
+                if (envKeystore != null) {
+                    storeFile = file(envKeystore)
+                    storePassword = System.getenv("KEYSTORE_PASSWORD")
+                    keyAlias = System.getenv("KEY_ALIAS")
+                    keyPassword = System.getenv("KEY_PASSWORD")
+                } else {
+                    storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                    storePassword = keystoreProps.getProperty("storePassword")
+                    keyAlias = keystoreProps.getProperty("keyAlias")
+                    keyPassword = keystoreProps.getProperty("keyPassword")
+                }
             }
         }
     }
 
     buildTypes {
         release {
-            // Own key when KEYSTORE_PATH is set (CI secrets), otherwise debug key so the APK installs.
-            signingConfig = if (System.getenv("KEYSTORE_PATH") != null)
-                signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseKey) signingConfigs.getByName("release")
+            else signingConfigs.getByName("debug")
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

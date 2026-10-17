@@ -51,8 +51,11 @@ other way to carry them. After connecting nothing else is needed.
 
 ## Release APK via GitHub Actions
 
-`.github/workflows/release.yml` builds a release APK on every `v*` tag (e.g. `git tag v1.0 && git push --tags`)
-or manually from the Actions tab. It uploads the APK as an artifact and attaches it to a GitHub Release.
+`.github/workflows/release.yml` builds a release APK on every push to main/master and on every `v*` tag (e.g. `git tag v1.0 && git push --tags`)
+or manually from the Actions tab. It uploads the APK as an artifact and attaches it to a GitHub Release (tags only).
 
-Without secrets the APK is signed with the debug key (installs fine, not for Play Store). To sign with your
-own key, add repo secrets: `KEYSTORE_BASE64` (`base64 -w0 release.jks`), `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
+The APK is signed with the bundled random keystore (`app/release.jks`, credentials in `keystore.properties`),
+so builds install and update over each other with no setup. That key is committed to the repo, so treat it as a
+sideloading key only: anyone with repo access can sign as you. For Play Store or a private repo-free key, replace
+it, or add repo secrets that override it: `KEYSTORE_BASE64` (`base64 -w0 release.jks`), `KEYSTORE_PASSWORD`,
+`KEY_ALIAS`, `KEY_PASSWORD`.
