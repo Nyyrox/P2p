@@ -1,6 +1,7 @@
 package com.peertalk.app.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,9 +41,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.peertalk.app.R
 import com.peertalk.app.rtc.Phase
 import com.peertalk.app.rtc.UiState
 
@@ -122,17 +125,18 @@ private fun Hero() {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(28.dp))
-            .background(Brush.linearGradient(listOf(Brand.Indigo, Brand.Teal)))
+            .background(Brush.linearGradient(listOf(Brand.Blue, Brand.Cyan)))
             .padding(24.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(width = 64.dp, height = 40.dp)) {
-                Box(Modifier.size(40.dp).align(Alignment.CenterStart).background(Color.White.copy(alpha = 0.95f), CircleShape))
-                Box(Modifier.size(40.dp).align(Alignment.CenterEnd).background(Color.White.copy(alpha = 0.45f), CircleShape))
-            }
+            Image(
+                painter = painterResource(R.drawable.pt_logo),
+                contentDescription = "PeerTalk logo",
+                modifier = Modifier.size(72.dp).clip(RoundedCornerShape(18.dp)),
+            )
             Text("PeerTalk", style = MaterialTheme.typography.headlineLarge, color = Color.White)
             Text(
-                "Private chat and calls straight between two phones. No account, no server.",
+                "Private chat, calls, screen sharing and files straight between two phones. No account, no server.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = Color.White.copy(alpha = 0.9f),
             )

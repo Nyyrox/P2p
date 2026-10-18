@@ -28,7 +28,6 @@ private enum class Screen { HOME, HOST, JOIN, CHAT, CALL, ENDED }
 @Composable
 fun PeerTalkApp(engine: PeerEngine) {
     val state by engine.state.collectAsStateWithLifecycle()
-    val remoteVideo by engine.remoteVideo.collectAsStateWithLifecycle()
 
     var mode by rememberSaveable { mutableStateOf(Mode.HOME) }
     var useStun by rememberSaveable { mutableStateOf(true) }
@@ -76,7 +75,7 @@ fun PeerTalkApp(engine: PeerEngine) {
                     state = state,
                     onLeave = { engine.hangUp(); mode = Mode.HOME },
                 )
-                Screen.CALL -> CallScreen(engine = engine, state = state, remoteVideo = remoteVideo)
+                Screen.CALL -> CallScreen(engine = engine, state = state)
                 Screen.ENDED -> EndedScreen(state.endedReason, onBack = backToHome)
             }
         }

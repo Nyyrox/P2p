@@ -92,10 +92,17 @@ internal fun micGranted(ctx: Context): Boolean =
     ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
         PackageManager.PERMISSION_GRANTED
 
-/** Permissions requested when the call screen opens. This is the ONLY place the mic is asked for. */
-internal fun callPermissions(ctx: Context): Array<String> = buildList {
+internal fun camGranted(ctx: Context): Boolean =
+    ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+/**
+ * Permissions requested when the call screen opens: the ONLY place mic / camera are asked for.
+ * The camera is only included for video calls (otherwise it is asked when the user taps the camera button).
+ */
+internal fun callPermissions(ctx: Context, withCamera: Boolean): Array<String> = buildList {
     if (!micGranted(ctx)) add(Manifest.permission.RECORD_AUDIO)
-    if (android.os.Build.VERSION.SDK_INT >= 33 &&
+    if (withCamera && !camGranted(ctx)) add(Manifest.permission.CAMERA)
+    if (isNotEmpty() && android.os.Build.VERSION.SDK_INT >= 33 &&
         ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) !=
         PackageManager.PERMISSION_GRANTED
     ) add(Manifest.permission.POST_NOTIFICATIONS)

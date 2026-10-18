@@ -30,6 +30,18 @@ enum class CallPhase {
     ACTIVE,
 }
 
+enum class FileStatus { SENDING, RECEIVING, DONE, FAILED, CANCELED }
+
+data class FileInfo(
+    val name: String,
+    val size: Long,
+    val mime: String,
+    val status: FileStatus,
+    val transferred: Long = 0L,
+    /** Absolute path of a fully received file inside the app's private storage. */
+    val path: String? = null,
+)
+
 data class ChatMessage(
     val id: String,
     val text: String,
@@ -37,6 +49,8 @@ data class ChatMessage(
     val time: Long = System.currentTimeMillis(),
     /** A centered event line ("Call ended", "Alex is now Sam") instead of a bubble. */
     val system: Boolean = false,
+    /** Set when this message is a file transfer card instead of text. */
+    val file: FileInfo? = null,
 )
 
 data class UiState(
@@ -49,11 +63,16 @@ data class UiState(
     val myName: String = "",
     val peerName: String = "",
     val callPhase: CallPhase = CallPhase.NONE,
+    /** The call was started as a video call (camera is turned on automatically on the call screen). */
+    val callVideo: Boolean = false,
     val callStartedAt: Long = 0L,
     /** True once the microphone track exists (permission was granted on the call screen). */
     val micActive: Boolean = false,
     val micMuted: Boolean = false,
     val speakerOn: Boolean = true,
+    val cameraOn: Boolean = false,
+    val frontCamera: Boolean = true,
+    val remoteCameraOn: Boolean = false,
     val sharingScreen: Boolean = false,
     val remoteSharing: Boolean = false,
     val linkUnstable: Boolean = false,

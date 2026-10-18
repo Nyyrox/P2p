@@ -21,18 +21,37 @@ other way to carry them. After connecting nothing else is needed.
 
 ## In the chat
 
-- Text chat (WebRTC data channel). Each person's name is shown to the other; tap **You: name** to edit yours any time.
-- Tap the **phone icon** to ask for a voice call. The other person gets an incoming-call card and can **Accept** or **Decline**.
+- Text chat and **file sharing** (paperclip button). Files go straight to the other phone over the same encrypted
+  data channel, with live progress and a cancel button on both sides. The receiver gets **Open** and **Save**.
+- Each person's name is shown to the other; tap **You: name** to edit yours any time.
+- Tap the **phone** icon for a voice call or the **camera** icon for a video call. The other person gets an
+  incoming-call card and can **Accept** or **Decline**.
   - Accept: both phones switch to the call screen.
   - Decline / no answer (45 s) / cancel: you simply stay in the chat. A line in the chat records what happened.
-- **The microphone permission is only requested when the call screen opens**, never when creating, joining or chatting.
-  If you deny it you can still listen, and the call screen has an *Allow* button (or *Open settings* if blocked).
+- **Mic and camera permissions are only requested on the call screen**, never when creating, joining or chatting.
+  Deny them and you can still listen or watch; the call screen has an *Allow* button (or *Open settings* if blocked).
 - Ending a call returns both people to the chat; the session stays open until someone leaves.
 
 ## In the call
 
-- Live voice (mic and speaker, with mute and speaker/earpiece toggle) and a call timer
-- Screen share (either side, or both at once). Starts the system capture prompt, streams at up to 1280px, 15 fps.
+- Voice with mute, speaker/earpiece and a call timer.
+- **Video**: toggle your camera any time (flip front/back from the preview). A voice call can become a video call.
+- **Screen share**: tap Share, accept the system prompt, then switch to any app. A red "You're sharing" card (and a
+  *Stop sharing* button in the notification) makes it obvious. The viewer gets a full-screen picture with
+  tap-to-hide controls, a fit / fill toggle and a loading state until the first frame arrives.
+- Everyone can share their screen and use their camera at the same time; the screen takes the main stage and the
+  camera becomes a small picture-in-picture.
+
+## How media is wired
+
+Three media lines are negotiated once (audio, camera, screen), all send/receive. Their senders stay empty until
+needed, so starting or stopping mic, camera or screen share never needs a new code exchange.
+Video uses software VP8 on both phones. Hardware H.264 encoders differ a lot between devices and were the most
+likely reason screen share worked on one phone and showed nothing on another. The viewer also keeps the last
+received frame, so a still screen (which sends no new frames) is not black after the view is recreated.
+
+If screen share still fails, run `adb logcat -s PeerTalk` while you start it. Every step logs there, and errors
+also appear as a banner on the call screen.
 
 ## Internet vs same Wi-Fi
 
@@ -48,12 +67,14 @@ other way to carry them. After connecting nothing else is needed.
 |---|---|
 | `rtc/PeerEngine.kt` | WebRTC core: peer connection, data channel, audio, screen capture |
 | `rtc/CodeCodec.kt` | SDP to gzip + Base64 code and back |
-| `CallService.kt` | Foreground service. Chat = dataSync only; mic type is added only during a call (Android 14+) |
+| `CallService.kt` | Foreground service. Chat = dataSync only; mic / camera / mediaProjection types are added only while in use (Android 14+) |
 | `ui/PeerTalkApp.kt` | Root navigation: home, create, join, chat, call, ended |
 | `ui/Theme.kt`, `ui/Components.kt` | Material 3 theme (light/dark) and shared composables |
 | `ui/SetupScreens.kt` | Home, create (host), join (guest), ended |
 | `ui/ChatScreen.kt` | Chat, name editing, call button, ringing banner, incoming-call card |
-| `ui/CallScreen.kt` | In-call UI; the only place the mic permission is requested |
+| `ui/CallScreen.kt` | In-call UI (stage, camera preview, screen-share viewer); the only place mic / camera are requested |
+| `ui/VideoViews.kt` | SurfaceViewRenderer wrapper (fit / fill, mirror, first-frame callback) |
+| `rtc/VideoRelay.kt` | Fan-out of video frames to renderers, replays the last frame to late joiners |
 
 ## Notes
 
