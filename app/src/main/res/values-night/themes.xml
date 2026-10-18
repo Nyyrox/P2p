@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark window background so there is no white flash before Compose draws. -->
+    <style name="Theme.PeerTalk" parent="android:Theme.Material.NoActionBar" />
+</resources>

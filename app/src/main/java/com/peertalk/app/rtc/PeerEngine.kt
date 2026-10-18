@@ -30,6 +30,7 @@ import org.webrtc.MediaStream
 import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
+import org.webrtc.RtpSender
 import org.webrtc.RtpTransceiver
 import org.webrtc.ScreenCapturerAndroid
 import org.webrtc.SdpObserver
@@ -46,11 +47,19 @@ import kotlin.math.min
 
 /**
  * Process-wide WebRTC engine. No signaling server: the two SDP blobs are exchanged by the
- * users themselves (see [CodeCodec]). Everything after that - chat, voice, screen video -
- * flows peer to peer. Control messages (chat, "screen on/off", "bye") ride the data channel.
+ * users themselves (see [CodeCodec]). Everything after that flows peer to peer.
  *
- * Both sides pre-negotiate one audio + one video m-line (sendrecv) plus a data channel, so
- * starting/stopping screen share never needs a new offer/answer round.
+ * A session starts as CHAT ONLY. The microphone is never opened (and no permission is needed)
+ * until both people agree to a voice call:
+ *
+ *   caller: [requestCall]  ->  "call_req"
+ *   callee: [acceptCall] / [declineCall]  ->  "call_accept" / "call_decline"
+ *   either: [endCall] -> "call_end" (back to chat, session stays open)
+ *
+ * The UI calls [beginAudio] from the call screen once it has asked for the mic permission.
+ *
+ * Both sides pre-negotiate one audio + one video m-line (sendrecv) plus a data channel. The audio
+ * sender simply has no track until the call starts, so no renegotiation is ever needed.
  */
 class PeerEngine private constructor(private val app: Context) {
 
@@ -62,6 +71,7 @@ class PeerEngine private constructor(private val app: Context) {
             }
 
         private const val GATHER_TIMEOUT_MS = 6_000L
+        private const val CALL_TIMEOUT_MS = 45_000L
         private val STUN = listOf(
             "stun:stun.l.google.com:19302",
             "stun:stun1.l.google.com:19302",
@@ -73,7 +83,10 @@ class PeerEngine private constructor(private val app: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val audioManager = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-    private val _state = MutableStateFlow(UiState())
+    private val prefs = app.getSharedPreferences("peertalk", Context.MODE_PRIVATE)
+    private var myName: String = prefs.getString("name", "") ?: ""
+
+    private val _state = MutableStateFlow(UiState(myName = myName))
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     private val _remoteVideo = MutableStateFlow<VideoTrack?>(null)
@@ -92,27 +105,62 @@ class PeerEngine private constructor(private val app: Context) {
     // ---- per-session resources ------------------------------------------------------------
     private var pc: PeerConnection? = null
     private var channel: DataChannel? = null
+    private var audioSender: RtpSender? = null
     private var audioSource: AudioSource? = null
     private var audioTrack: AudioTrack? = null
+    private var audioModeSet = false
     private var videoSource: VideoSource? = null
     private var videoTrack: VideoTrack? = null
     private var capturer: ScreenCapturerAndroid? = null
     private var captureHelper: SurfaceTextureHelper? = null
     private var gathered = CompletableDeferred<Unit>()
-    private var isHost = false
+    @Volatile private var callToken = 0
 
     // =========================================================================================
-    // Public API
+    // Names
+    // =========================================================================================
+
+    private fun cleanName(raw: String) =
+        raw.trim().replace(Regex("\\s+"), " ").take(MAX_NAME_LENGTH)
+
+    private fun rememberName(raw: String) {
+        val n = cleanName(raw)
+        if (n.isEmpty()) return
+        myName = n
+        prefs.edit().putString("name", n).apply()
+        _state.update { it.copy(myName = n) }
+    }
+
+    /** Change our display name. The other person sees the update immediately. */
+    fun setMyName(raw: String) {
+        val n = cleanName(raw)
+        if (n.isEmpty() || n == myName) return
+        rememberName(n)
+        sendHello()
+    }
+
+    private fun sendHello() {
+        if (myName.isNotEmpty()) sendControl(JSONObject().put("t", "hello").put("name", myName))
+    }
+
+    private fun blank(phase: Phase = Phase.IDLE, error: String? = null, endedReason: String? = null) =
+        UiState(phase = phase, error = error, endedReason = endedReason, myName = myName)
+
+    private fun sys(text: String) =
+        ChatMessage(UUID.randomUUID().toString(), text, mine = false, system = true)
+
+    // =========================================================================================
+    // Connection setup (code exchange)
     // =========================================================================================
 
     /** Host step 1: create the invite code. */
-    fun startHost(useStun: Boolean) {
+    fun startHost(name: String, useStun: Boolean) {
         if (_state.value.phase != Phase.IDLE) return
-        _state.value = UiState(phase = Phase.WORKING)
-        CallService.start(app, CallService.ACTION_CALL)
+        rememberName(name)
+        _state.value = blank(Phase.WORKING)
+        updateService(CallService.ACTION_SESSION)
         scope.launch {
             try {
-                isHost = true
                 val conn = openSession(useStun)
                 attachChannel(conn.createDataChannel("peertalk", DataChannel.Init()))
                 bindTracksToNewTransceivers(conn)
@@ -152,8 +200,9 @@ class PeerEngine private constructor(private val app: Context) {
     }
 
     /** Guest: apply the host's invite code and produce the reply code. */
-    fun join(code: String, useStun: Boolean) {
+    fun join(code: String, name: String, useStun: Boolean) {
         if (_state.value.phase != Phase.IDLE) return
+        rememberName(name)
         val offer = try {
             CodeCodec.decode(code).also {
                 require(it.type == SessionDescription.Type.OFFER) {
@@ -164,11 +213,10 @@ class PeerEngine private constructor(private val app: Context) {
             _state.update { it.copy(error = e.message) }
             return
         }
-        _state.value = UiState(phase = Phase.WORKING)
-        CallService.start(app, CallService.ACTION_CALL)
+        _state.value = blank(Phase.WORKING)
+        updateService(CallService.ACTION_SESSION)
         scope.launch {
             try {
-                isHost = false
                 val conn = openSession(useStun)
                 conn.setRemoteS(offer)
                 bindTracksToExistingTransceivers(conn)
@@ -183,6 +231,10 @@ class PeerEngine private constructor(private val app: Context) {
         }
     }
 
+    // =========================================================================================
+    // Chat
+    // =========================================================================================
+
     fun sendChat(text: String) {
         val t = text.trim()
         if (t.isEmpty()) return
@@ -192,8 +244,125 @@ class PeerEngine private constructor(private val app: Context) {
         }
     }
 
+    // =========================================================================================
+    // Calling (optional, needs the other person to accept)
+    // =========================================================================================
+
+    /** Ask the other person to start a voice call. Nothing about audio is touched yet. */
+    fun requestCall() {
+        val s = _state.value
+        if (s.phase != Phase.CONNECTED || s.callPhase != CallPhase.NONE) return
+        if (!sendControl(JSONObject().put("t", "call_req"))) {
+            _state.update { it.copy(error = "Can't reach your friend right now.") }
+            return
+        }
+        _state.update { it.copy(callPhase = CallPhase.OUTGOING, error = null) }
+        val token = ++callToken
+        scope.launch {
+            delay(CALL_TIMEOUT_MS)
+            if (token == callToken && _state.value.callPhase == CallPhase.OUTGOING) {
+                sendControl(JSONObject().put("t", "call_cancel"))
+                _state.update { it.copy(callPhase = CallPhase.NONE, messages = it.messages + sys("No answer")) }
+            }
+        }
+    }
+
+    fun cancelCall() {
+        if (_state.value.callPhase != CallPhase.OUTGOING) return
+        callToken++
+        sendControl(JSONObject().put("t", "call_cancel"))
+        _state.update { it.copy(callPhase = CallPhase.NONE) }
+    }
+
+    fun acceptCall() {
+        if (_state.value.callPhase != CallPhase.INCOMING) return
+        sendControl(JSONObject().put("t", "call_accept"))
+        activateCall()
+    }
+
+    fun declineCall() {
+        if (_state.value.callPhase != CallPhase.INCOMING) return
+        sendControl(JSONObject().put("t", "call_decline"))
+        _state.update { it.copy(callPhase = CallPhase.NONE, messages = it.messages + sys("You declined a call")) }
+    }
+
+    /** End the call and go back to the chat. The session itself stays open. */
+    fun endCall() {
+        if (_state.value.callPhase != CallPhase.ACTIVE) return
+        sendControl(JSONObject().put("t", "call_end"))
+        finishCall("Call ended")
+    }
+
+    private fun activateCall() {
+        _state.update { it.copy(callPhase = CallPhase.ACTIVE, callStartedAt = System.currentTimeMillis(), error = null) }
+    }
+
+    private fun finishCall(label: String) {
+        val s = _state.value
+        val duration = if (s.callStartedAt > 0) formatDuration(System.currentTimeMillis() - s.callStartedAt) else null
+        stopScreenShare()
+        endAudio()
+        _state.update {
+            it.copy(
+                callPhase = CallPhase.NONE,
+                callStartedAt = 0L,
+                remoteSharing = false,
+                messages = it.messages + sys(if (duration != null) "$label · $duration" else label),
+            )
+        }
+    }
+
+    private fun formatDuration(ms: Long): String {
+        val t = ms / 1000
+        return "%02d:%02d".format(t / 60, t % 60)
+    }
+
+    /**
+     * Called by the call screen. [micGranted] is whatever the user answered on the permission
+     * prompt. Without it we still route audio so the person can listen, but we do not send.
+     * Safe to call repeatedly (e.g. after the user grants the mic later).
+     */
+    fun beginAudio(micGranted: Boolean) {
+        if (_state.value.callPhase != CallPhase.ACTIVE || pc == null) return
+        var changed = false
+        if (!audioModeSet) {
+            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = _state.value.speakerOn
+            audioModeSet = true
+            changed = true
+        }
+        if (micGranted && audioTrack == null) {
+            val src = factory.createAudioSource(MediaConstraints())
+            val track = factory.createAudioTrack("pt-audio", src)
+            audioSource = src
+            audioTrack = track
+            audioSender?.setTrack(track, false)
+            _state.update { it.copy(micActive = true, micMuted = false) }
+            changed = true
+        }
+        if (changed) updateService(if (audioTrack != null) CallService.ACTION_CALL else CallService.ACTION_SESSION)
+    }
+
+    private fun endAudio() {
+        try { audioSender?.setTrack(null, false) } catch (_: Throwable) {}
+        try { audioTrack?.dispose() } catch (_: Throwable) {}
+        try { audioSource?.dispose() } catch (_: Throwable) {}
+        audioTrack = null
+        audioSource = null
+        if (audioModeSet) {
+            audioManager.mode = AudioManager.MODE_NORMAL
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = false
+            audioModeSet = false
+        }
+        _state.update { it.copy(micActive = false, micMuted = false) }
+        if (pc != null) updateService(CallService.ACTION_SESSION)
+    }
+
     fun setMicMuted(muted: Boolean) {
-        audioTrack?.setEnabled(!muted)
+        val track = audioTrack ?: return
+        track.setEnabled(!muted)
         _state.update { it.copy(micMuted = muted) }
     }
 
@@ -203,11 +372,15 @@ class PeerEngine private constructor(private val app: Context) {
         _state.update { it.copy(speakerOn = on) }
     }
 
+    // =========================================================================================
+    // Screen share (inside a call)
+    // =========================================================================================
+
     /** [projectionResult] is the Intent returned by MediaProjectionManager's permission screen. */
     fun startScreenShare(projectionResult: Intent) {
         val source = videoSource ?: return
         val track = videoTrack ?: return
-        if (_state.value.phase != Phase.CONNECTED || capturer != null) return
+        if (_state.value.callPhase != CallPhase.ACTIVE || capturer != null) return
         try {
             val cap = ScreenCapturerAndroid(projectionResult, object : MediaProjection.Callback() {
                 override fun onStop() {
@@ -244,26 +417,30 @@ class PeerEngine private constructor(private val app: Context) {
         videoTrack?.setEnabled(false)
         if (wasSharing) sendControl(JSONObject().put("t", "screen").put("on", false))
         _state.update { it.copy(sharingScreen = false) }
-        // Drop back to a microphone-only foreground service.
+        // Drop the mediaProjection service type again.
         if (wasSharing && pc != null) {
-            try { CallService.start(app, CallService.ACTION_CALL) } catch (_: Throwable) {}
+            updateService(if (audioTrack != null) CallService.ACTION_CALL else CallService.ACTION_SESSION)
         }
     }
 
-    /** User ended the call / cancelled the setup. */
+    // =========================================================================================
+    // Leaving
+    // =========================================================================================
+
+    /** User left the chat / cancelled the setup. */
     fun hangUp() {
         val told = sendControl(JSONObject().put("t", "bye"))
         scope.launch {
             if (told) delay(250) // let the "bye" leave the data channel before closing
             closeSession()
-            _state.value = UiState()
+            _state.value = blank()
         }
     }
 
-    /** Leave the "ended" screen. */
+    /** Leave the "ended" screen, or back out of the setup screens. */
     fun reset() {
         closeSession()
-        _state.value = UiState()
+        _state.value = blank()
     }
 
     fun clearError() = _state.update { it.copy(error = null) }
@@ -272,21 +449,20 @@ class PeerEngine private constructor(private val app: Context) {
     // Session setup / teardown
     // =========================================================================================
 
+    private fun updateService(action: String) {
+        try { CallService.start(app, action) } catch (_: Throwable) {}
+    }
+
     private fun openSession(useStun: Boolean): PeerConnection {
         releaseResources()
         gathered = CompletableDeferred()
 
-        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        @Suppress("DEPRECATION")
-        audioManager.isSpeakerphoneOn = true
-
         val f = factory
-        val aSource = f.createAudioSource(MediaConstraints())
-        val aTrack = f.createAudioTrack("pt-audio", aSource)
+        // Video (screen) source is created up front but stays disabled. No permission needed.
+        // Audio is NOT created here: the mic is only opened when a call starts.
         val vSource = f.createVideoSource(/* isScreencast = */ true)
         val vTrack = f.createVideoTrack("pt-screen", vSource)
         vTrack.setEnabled(false)
-        audioSource = aSource; audioTrack = aTrack
         videoSource = vSource; videoTrack = vTrack
 
         val servers = if (useStun) {
@@ -306,21 +482,20 @@ class PeerEngine private constructor(private val app: Context) {
         return conn
     }
 
-    /** Host side: add the audio + video m-lines ourselves. */
+    /** Host side: add the audio + video m-lines ourselves. Audio sender stays empty for now. */
     private fun bindTracksToNewTransceivers(conn: PeerConnection) {
         val init = RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.SEND_RECV)
-        conn.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO, init)
-            .sender.setTrack(audioTrack, false)
+        audioSender = conn.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO, init).sender
         conn.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO, init)
             .sender.setTrack(videoTrack, false)
     }
 
-    /** Guest side: the m-lines already exist (from the offer); attach our tracks and send too. */
+    /** Guest side: the m-lines already exist (from the offer); take the senders and send too. */
     private fun bindTracksToExistingTransceivers(conn: PeerConnection) {
         for (t in conn.transceivers) {
             t.setDirection(RtpTransceiver.RtpTransceiverDirection.SEND_RECV)
             when (t.mediaType) {
-                MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO -> t.sender.setTrack(audioTrack, false)
+                MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO -> audioSender = t.sender
                 MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO -> t.sender.setTrack(videoTrack, false)
                 else -> {}
             }
@@ -334,15 +509,16 @@ class PeerEngine private constructor(private val app: Context) {
 
     private fun failSession(message: String) {
         closeSession()
-        _state.value = UiState(error = message)
+        _state.value = blank(error = message)
     }
 
     private fun endSession(reason: String) {
         closeSession()
-        _state.value = UiState(phase = Phase.ENDED, endedReason = reason)
+        _state.value = blank(Phase.ENDED, endedReason = reason)
     }
 
     private fun closeSession() {
+        callToken++
         releaseResources()
         app.stopService(Intent(app, CallService::class.java))
     }
@@ -363,6 +539,7 @@ class PeerEngine private constructor(private val app: Context) {
         try { pc?.close() } catch (_: Throwable) {}
         try { pc?.dispose() } catch (_: Throwable) {}
         pc = null
+        audioSender = null
 
         try { videoTrack?.dispose() } catch (_: Throwable) {}
         try { videoSource?.dispose() } catch (_: Throwable) {}
@@ -373,6 +550,7 @@ class PeerEngine private constructor(private val app: Context) {
         audioManager.mode = AudioManager.MODE_NORMAL
         @Suppress("DEPRECATION")
         audioManager.isSpeakerphoneOn = false
+        audioModeSet = false
     }
 
     // =========================================================================================
@@ -384,7 +562,9 @@ class PeerEngine private constructor(private val app: Context) {
         channel = dc
         dc.registerObserver(object : DataChannel.Observer {
             override fun onBufferedAmountChange(previousAmount: Long) {}
-            override fun onStateChange() {}
+            override fun onStateChange() {
+                if (dc.state() == DataChannel.State.OPEN) sendHello()
+            }
             override fun onMessage(buffer: DataChannel.Buffer?) {
                 buffer ?: return
                 val bytes = ByteArray(buffer.data.remaining())
@@ -392,6 +572,8 @@ class PeerEngine private constructor(private val app: Context) {
                 handleControl(String(bytes, Charsets.UTF_8))
             }
         })
+        // The guest may receive the channel already open.
+        if (dc.state() == DataChannel.State.OPEN) sendHello()
     }
 
     private fun sendControl(json: JSONObject): Boolean {
@@ -405,9 +587,49 @@ class PeerEngine private constructor(private val app: Context) {
         try {
             val j = JSONObject(raw)
             when (j.getString("t")) {
+                "hello" -> {
+                    val n = cleanName(j.optString("name"))
+                    if (n.isNotEmpty()) _state.update { s ->
+                        val note = when {
+                            s.peerName.isEmpty() -> "You're connected with $n"
+                            s.peerName != n -> "${s.peerName} is now called $n"
+                            else -> null
+                        }
+                        s.copy(
+                            peerName = n,
+                            messages = if (note != null) s.messages + sys(note) else s.messages,
+                        )
+                    }
+                }
                 "chat" -> {
                     val msg = ChatMessage(j.getString("id"), j.getString("text"), mine = false)
                     _state.update { it.copy(messages = it.messages + msg) }
+                }
+                "call_req" -> when (_state.value.callPhase) {
+                    CallPhase.NONE -> _state.update { it.copy(callPhase = CallPhase.INCOMING) }
+                    CallPhase.OUTGOING -> {
+                        // Both people tapped call at the same moment: treat it as accepted.
+                        sendControl(JSONObject().put("t", "call_accept"))
+                        activateCall()
+                    }
+                    else -> {}
+                }
+                "call_accept" -> if (_state.value.callPhase == CallPhase.OUTGOING) activateCall()
+                "call_decline" -> if (_state.value.callPhase == CallPhase.OUTGOING) {
+                    callToken++
+                    _state.update {
+                        val who = it.peerName.ifEmpty { "Your friend" }
+                        it.copy(callPhase = CallPhase.NONE, messages = it.messages + sys("$who declined the call"))
+                    }
+                }
+                "call_cancel" -> if (_state.value.callPhase == CallPhase.INCOMING) {
+                    _state.update {
+                        val who = it.peerName.ifEmpty { "Your friend" }
+                        it.copy(callPhase = CallPhase.NONE, messages = it.messages + sys("Missed call from $who"))
+                    }
+                }
+                "call_end" -> if (_state.value.callPhase == CallPhase.ACTIVE) {
+                    scope.launch { finishCall("Call ended") }
                 }
                 "screen" -> _state.update { it.copy(remoteSharing = j.getBoolean("on")) }
                 "bye" -> endSession("The other person left.")
