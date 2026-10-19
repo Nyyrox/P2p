@@ -9,63 +9,60 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 
+/** Status colours only (online dot, accept / decline, warnings). Everything else is black and white. */
 object Brand {
-    val Blue = Color(0xFF1F6BFF)
-    val Cyan = Color(0xFF29C6F5)
-    val Green = Color(0xFF22C55E)
-    val Amber = Color(0xFFF59E0B)
-    val Red = Color(0xFFEF4444)
-    val CallTop = Color(0xFF0B1B3F)
-    val CallBottom = Color(0xFF030712)
+    val Green = Color(0xFF3FAE6A)
+    val Amber = Color(0xFFE0A100)
+    val Red = Color(0xFFD9534F)
 }
 
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF1F6BFF),
+    primary = Color(0xFF111111),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFDCE8FF),
-    onPrimaryContainer = Color(0xFF00205C),
-    secondary = Color(0xFF0891B2),
+    primaryContainer = Color(0xFFEDEDED),
+    onPrimaryContainer = Color(0xFF111111),
+    secondary = Color(0xFF404040),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFCDF1FA),
-    onSecondaryContainer = Color(0xFF00323F),
-    background = Color(0xFFF4F7FC),
-    onBackground = Color(0xFF14151F),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF14151F),
-    surfaceVariant = Color(0xFFE9EEF8),
-    onSurfaceVariant = Color(0xFF4A5568),
-    surfaceContainer = Color(0xFFEDF1F9),
-    surfaceContainerHigh = Color(0xFFE6ECF7),
-    outline = Color(0xFFAEB9CF),
-    outlineVariant = Color(0xFFDCE3F0),
-    error = Color(0xFFDC2626),
+    secondaryContainer = Color(0xFFE8E8E8),
+    onSecondaryContainer = Color(0xFF111111),
+    background = Color.White,
+    onBackground = Color(0xFF111111),
+    surface = Color.White,
+    onSurface = Color(0xFF111111),
+    surfaceVariant = Color(0xFFF2F2F2),
+    onSurfaceVariant = Color(0xFF5C5C5C),
+    surfaceContainer = Color(0xFFF5F5F5),
+    surfaceContainerHigh = Color(0xFFEEEEEE),
+    outline = Color(0xFFBDBDBD),
+    outlineVariant = Color(0xFFE3E3E3),
+    error = Color(0xFFC62828),
     onError = Color.White,
-    errorContainer = Color(0xFFFDE2E2),
-    onErrorContainer = Color(0xFF7A1010),
+    errorContainer = Color(0xFFF5E1E1),
+    onErrorContainer = Color(0xFF5E1212),
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF6AA6FF),
-    onPrimary = Color(0xFF002A66),
-    primaryContainer = Color(0xFF12388A),
-    onPrimaryContainer = Color(0xFFDCE8FF),
-    secondary = Color(0xFF4DD4F7),
-    onSecondary = Color(0xFF00323F),
-    secondaryContainer = Color(0xFF0B4A5C),
-    onSecondaryContainer = Color(0xFFCDF1FA),
-    background = Color(0xFF050B18),
-    onBackground = Color(0xFFE6E6F2),
-    surface = Color(0xFF0C1526),
-    onSurface = Color(0xFFE6E6F2),
-    surfaceVariant = Color(0xFF16223A),
-    onSurfaceVariant = Color(0xFF9FB0CC),
-    surfaceContainer = Color(0xFF111C31),
-    surfaceContainerHigh = Color(0xFF18253E),
-    outline = Color(0xFF55698F),
-    outlineVariant = Color(0xFF1F2E4D),
-    error = Color(0xFFF87171),
-    onError = Color(0xFF4A0707),
-    errorContainer = Color(0xFF5B1414),
+    primary = Color(0xFFF5F5F5),
+    onPrimary = Color(0xFF0A0A0A),
+    primaryContainer = Color(0xFF2A2A2A),
+    onPrimaryContainer = Color(0xFFF5F5F5),
+    secondary = Color(0xFFBDBDBD),
+    onSecondary = Color(0xFF0A0A0A),
+    secondaryContainer = Color(0xFF262626),
+    onSecondaryContainer = Color(0xFFF5F5F5),
+    background = Color.Black,
+    onBackground = Color(0xFFF2F2F2),
+    surface = Color(0xFF0B0B0B),
+    onSurface = Color(0xFFF2F2F2),
+    surfaceVariant = Color(0xFF1A1A1A),
+    onSurfaceVariant = Color(0xFFA6A6A6),
+    surfaceContainer = Color(0xFF121212),
+    surfaceContainerHigh = Color(0xFF1C1C1C),
+    outline = Color(0xFF5A5A5A),
+    outlineVariant = Color(0xFF262626),
+    error = Color(0xFFEF5350),
+    onError = Color(0xFF2B0000),
+    errorContainer = Color(0xFF3B1414),
     onErrorContainer = Color(0xFFFFDAD6),
 )
 

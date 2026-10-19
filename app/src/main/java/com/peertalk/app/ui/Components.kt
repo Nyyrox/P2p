@@ -112,43 +112,50 @@ internal fun callPermissions(ctx: Context, withCamera: Boolean): Array<String> =
 // Avatars
 // ---------------------------------------------------------------------------------------------
 
-private val AvatarPalette = listOf(
-    Color(0xFF6366F1), Color(0xFF0EA5A4), Color(0xFFEC4899),
-    Color(0xFFF59E0B), Color(0xFF8B5CF6), Color(0xFF22C55E),
-)
-
+/** Monochrome avatar: initial on a solid circle. Colours default to the theme, the call screen overrides them. */
 @Composable
-fun Avatar(name: String, size: Dp, modifier: Modifier = Modifier) {
-    val color = AvatarPalette[(name.lowercase().hashCode() and 0x7fffffff) % AvatarPalette.size]
-    Box(modifier.size(size).background(color, CircleShape), contentAlignment = Alignment.Center) {
+fun Avatar(
+    name: String,
+    size: Dp,
+    modifier: Modifier = Modifier,
+    container: Color = MaterialTheme.colorScheme.onSurface,
+    content: Color = MaterialTheme.colorScheme.surface,
+) {
+    Box(modifier.size(size).background(container, CircleShape), contentAlignment = Alignment.Center) {
         Text(
             name.trim().firstOrNull()?.uppercase() ?: "?",
-            color = Color.White,
+            color = content,
             fontWeight = FontWeight.Bold,
             fontSize = (size.value * 0.42f).sp,
         )
     }
 }
 
-/** Avatar with soft expanding rings, used while ringing and during a call. */
+/** Avatar with a soft expanding ring, used while ringing and during a call. */
 @Composable
-fun PulsingAvatar(name: String, size: Dp = 96.dp, ringColor: Color = MaterialTheme.colorScheme.primary) {
+fun PulsingAvatar(
+    name: String,
+    size: Dp = 96.dp,
+    ringColor: Color = MaterialTheme.colorScheme.onSurface,
+    container: Color = MaterialTheme.colorScheme.onSurface,
+    content: Color = MaterialTheme.colorScheme.surface,
+) {
     val t = rememberInfiniteTransition(label = "pulse")
     val scale by t.animateFloat(
         initialValue = 1f,
-        targetValue = 1.6f,
-        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing), RepeatMode.Restart),
+        targetValue = 1.5f,
+        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing), RepeatMode.Restart),
         label = "scale",
     )
     val alpha by t.animateFloat(
-        initialValue = 0.4f,
+        initialValue = 0.22f,
         targetValue = 0f,
-        animationSpec = infiniteRepeatable(tween(1800, easing = LinearEasing), RepeatMode.Restart),
+        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing), RepeatMode.Restart),
         label = "alpha",
     )
     Box(Modifier.size(size * 1.7f), contentAlignment = Alignment.Center) {
         Box(Modifier.size(size).scale(scale).background(ringColor.copy(alpha = alpha), CircleShape))
-        Avatar(name, size)
+        Avatar(name, size, container = container, content = content)
     }
 }
 

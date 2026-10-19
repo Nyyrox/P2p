@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -41,6 +42,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
@@ -48,6 +51,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -61,6 +65,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -88,7 +93,7 @@ import java.text.DateFormat
 import java.util.Date
 
 @Composable
-fun ChatScreen(engine: PeerEngine, state: UiState, onLeave: () -> Unit) {
+fun ChatScreen(engine: PeerEngine, state: UiState, onLeave: () -> Unit, onReturnToCall: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     val peer = state.peerName.ifEmpty { "Friend" }
@@ -133,7 +138,7 @@ fun ChatScreen(engine: PeerEngine, state: UiState, onLeave: () -> Unit) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
 
             // ---- header ----------------------------------------------------------------
-            Surface(color = cs.surface, tonalElevation = 2.dp, shadowElevation = 2.dp) {
+            Surface(color = cs.background) {
                 Column {
                     Row(
                         Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
@@ -199,12 +204,16 @@ fun ChatScreen(engine: PeerEngine, state: UiState, onLeave: () -> Unit) {
                             color = cs.onSurfaceVariant,
                         )
                     }
+                    HorizontalDivider(color = cs.outlineVariant)
                 }
             }
 
+            // ---- a call is running in the background: tap to maximise ---------------------
+            if (state.callPhase == CallPhase.ACTIVE) OngoingCallBar(engine, state, peer, onReturnToCall)
+
             // ---- ringing banner -----------------------------------------------------------
             AnimatedVisibility(visible = state.callPhase == CallPhase.OUTGOING) {
-                Surface(color = cs.primaryContainer, contentColor = cs.onPrimaryContainer, modifier = Modifier.fillMaxWidth()) {
+                Surface(color = cs.surfaceVariant, contentColor = cs.onSurface, modifier = Modifier.fillMaxWidth()) {
                     Row(
                         Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -283,9 +292,10 @@ fun ChatScreen(engine: PeerEngine, state: UiState, onLeave: () -> Unit) {
                     ),
                     keyboardActions = KeyboardActions(onSend = { send() }),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = cs.surface,
-                        unfocusedContainerColor = cs.surface,
-                        unfocusedBorderColor = cs.outlineVariant,
+                        focusedContainerColor = cs.background,
+                        unfocusedContainerColor = cs.background,
+                        focusedBorderColor = cs.onSurface,
+                        unfocusedBorderColor = cs.outline,
                     ),
                 )
                 FilledIconButton(onClick = send, enabled = draft.isNotBlank(), modifier = Modifier.size(54.dp)) {
@@ -381,10 +391,9 @@ private fun Bubble(m: ChatMessage, timeFormat: DateFormat) {
     val cs = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (m.mine) Arrangement.End else Arrangement.Start) {
         Surface(
-            color = if (m.mine) cs.primary else cs.surface,
+            color = if (m.mine) cs.primary else cs.surfaceVariant,
             contentColor = if (m.mine) cs.onPrimary else cs.onSurface,
             shape = bubbleShape(m.mine),
-            tonalElevation = if (m.mine) 0.dp else 1.dp,
             modifier = Modifier.widthIn(max = 300.dp),
         ) {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
@@ -411,7 +420,7 @@ private fun FileBubble(
     onSave: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val container = if (m.mine) cs.primary else cs.surface
+    val container = if (m.mine) cs.primary else cs.surfaceVariant
     val content = if (m.mine) cs.onPrimary else cs.onSurface
     val inProgress = file.status == FileStatus.SENDING || file.status == FileStatus.RECEIVING
     val known = file.size > 0
@@ -433,7 +442,6 @@ private fun FileBubble(
             color = container,
             contentColor = content,
             shape = bubbleShape(m.mine),
-            tonalElevation = if (m.mine) 0.dp else 1.dp,
             modifier = Modifier.widthIn(min = 240.dp, max = 300.dp),
         ) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -506,7 +514,7 @@ private fun IncomingCall(name: String, video: Boolean, onAccept: () -> Unit, onD
         Surface(
             shape = RoundedCornerShape(28.dp),
             color = cs.surface,
-            tonalElevation = 6.dp,
+            border = BorderStroke(1.dp, cs.outlineVariant),
             modifier = Modifier.padding(24.dp).fillMaxWidth(),
         ) {
             Column(
@@ -531,6 +539,53 @@ private fun IncomingCall(name: String, video: Boolean, onAccept: () -> Unit, onD
                         "Accept", Brand.Green, Color.White, onAccept, cs.onSurface,
                     )
                 }
+            }
+        }
+    }
+}
+
+/** Shown on top of the chat while a call is running in the background. Tap it to maximise the call. */
+@Composable
+private fun OngoingCallBar(engine: PeerEngine, state: UiState, peer: String, onReturn: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            now = System.currentTimeMillis()
+        }
+    }
+    val seconds = if (state.callStartedAt > 0) ((now - state.callStartedAt) / 1000).coerceAtLeast(0) else 0L
+    val label = when {
+        state.sharingScreen -> "Sharing your screen"
+        state.cameraOn || state.remoteCameraOn -> "Video call"
+        else -> "Voice call"
+    }
+    Surface(color = cs.primary, contentColor = cs.onPrimary, modifier = Modifier.fillMaxWidth().clickable(onClick = onReturn)) {
+        Row(
+            Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(Modifier.size(8.dp).background(Brand.Green, CircleShape))
+            Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
+                Text("$label with $peer", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "%02d:%02d · Tap to return".format(seconds / 60, seconds % 60),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = cs.onPrimary.copy(alpha = 0.7f),
+                )
+            }
+            if (state.micActive) {
+                IconButton(onClick = { engine.setMicMuted(!state.micMuted) }) {
+                    Icon(
+                        if (state.micMuted) Icons.Filled.MicOff else Icons.Filled.Mic,
+                        contentDescription = if (state.micMuted) "Unmute" else "Mute",
+                    )
+                }
+            }
+            IconButton(onClick = engine::endCall) {
+                Icon(Icons.Filled.CallEnd, contentDescription = "End call", tint = Brand.Red)
             }
         }
     }

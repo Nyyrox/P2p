@@ -7,6 +7,7 @@ import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.FlipCameraAndroid
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Mic
@@ -88,9 +90,13 @@ import kotlinx.coroutines.delay
  *
  * Stage priority: their screen share, then their camera, then their avatar. Your own camera is a
  * small preview in the corner. This is the only screen that asks for the microphone / camera.
+ *
+ * [onMinimize] sends the person back to the chat while the call keeps running (the chat shows a
+ * "tap to return" bar). [pip] is true while Android shows this screen in its small floating window:
+ * then only the picture is drawn, with no controls.
  */
 @Composable
-fun CallScreen(engine: PeerEngine, state: UiState) {
+fun CallScreen(engine: PeerEngine, state: UiState, pip: Boolean, onMinimize: () -> Unit) {
     val ctx = LocalContext.current
     val view = LocalView.current
     val peer = state.peerName.ifEmpty { "Friend" }
@@ -217,7 +223,9 @@ fun CallScreen(engine: PeerEngine, state: UiState) {
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Brand.CallTop, Brand.CallBottom)))) {
+    BackHandler(enabled = !pip) { onMinimize() }
+
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
 
         // ---- stage -----------------------------------------------------------------------
         when {
@@ -239,12 +247,26 @@ fun CallScreen(engine: PeerEngine, state: UiState) {
                     onFirstFrame = { gotFrame = true },
                 )
             }
+            pip -> Column(
+                Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Avatar(peer, 64.dp, container = Color.White, content = Color.Black)
+                Text(
+                    peer,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    modifier = Modifier.padding(top = 8.dp, start = 8.dp, end = 8.dp),
+                )
+            }
             else -> Column(
                 Modifier.fillMaxSize().padding(bottom = 120.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                PulsingAvatar(peer, 112.dp, ringColor = Color.White)
+                PulsingAvatar(peer, 112.dp, ringColor = Color.White, container = Color.White, content = Color.Black)
                 Text(peer, color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Text(
                     when {
@@ -252,13 +274,13 @@ fun CallScreen(engine: PeerEngine, state: UiState) {
                         state.micMuted -> "You're muted"
                         else -> "In call"
                     },
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = Color.White.copy(alpha = 0.65f),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
         }
 
-        if (hasRemoteVideo && !gotFrame) {
+        if (hasRemoteVideo && !gotFrame && !pip) {
             Column(
                 Modifier.align(Alignment.Center).padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -276,7 +298,7 @@ fun CallScreen(engine: PeerEngine, state: UiState) {
         }
 
         // Tap the picture to show / hide the controls.
-        if (hasRemoteVideo) {
+        if (hasRemoteVideo && !pip) {
             Box(
                 Modifier.fillMaxSize().clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -290,7 +312,7 @@ fun CallScreen(engine: PeerEngine, state: UiState) {
 
         // ---- top bar -------------------------------------------------------------------
         AnimatedVisibility(
-            visible = controlsVisible,
+            visible = controlsVisible && !pip,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter),
@@ -298,13 +320,16 @@ fun CallScreen(engine: PeerEngine, state: UiState) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)))
+                    .background(Color.Black.copy(alpha = if (hasRemoteVideo) 0.5f else 0f))
                     .statusBarsPadding()
-                    .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 20.dp),
+                    .padding(start = 4.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Box(Modifier.size(9.dp).background(if (state.linkUnstable) Brand.Amber else Brand.Green, CircleShape))
+                IconButton(onClick = onMinimize) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Minimise call", tint = Color.White)
+                }
+                Box(Modifier.size(8.dp).background(if (state.linkUnstable) Brand.Amber else Brand.Green, CircleShape))
                 Column(Modifier.weight(1f)) {
                     Text(
                         if (remoteScreenOn) "$peer's screen" else peer,
@@ -341,14 +366,13 @@ fun CallScreen(engine: PeerEngine, state: UiState) {
             Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 72.dp, end = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            if (state.cameraOn) {
+            if (state.cameraOn && !pip) {
                 Box(Modifier.size(width = 104.dp, height = 144.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black)) {
                     VideoView(
                         relay = engine.localCameraRelay,
                         eglBase = engine.eglBase,
                         modifier = Modifier.fillMaxSize(),
                         mirror = state.frontCamera,
-                        overlay = true,
                     )
                     IconButton(
                         onClick = engine::switchCamera,
@@ -358,20 +382,19 @@ fun CallScreen(engine: PeerEngine, state: UiState) {
                     }
                 }
             }
-            if (remoteScreenOn && remoteCamOn) {
+            if (remoteScreenOn && remoteCamOn && !pip) {
                 Box(Modifier.size(width = 104.dp, height = 144.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black)) {
                     VideoView(
                         relay = engine.remoteCameraRelay,
                         eglBase = engine.eglBase,
                         modifier = Modifier.fillMaxSize(),
-                        overlay = true,
                     )
                 }
             }
         }
 
         // ---- bottom: banners + controls --------------------------------------------------
-        Column(
+        if (!pip) Column(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
@@ -391,15 +414,15 @@ fun CallScreen(engine: PeerEngine, state: UiState) {
             state.error?.let { Banner(text = it, action = "Dismiss", onAction = engine::clearError) }
 
             AnimatedVisibility(visible = controlsVisible, enter = fadeIn(), exit = fadeOut()) {
-                Surface(color = Color.Black.copy(alpha = 0.4f), shape = RoundedCornerShape(32.dp)) {
+                Surface(color = Color(0xFF141414), shape = RoundedCornerShape(32.dp)) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.Top,
                     ) {
-                        val idle = Color.White.copy(alpha = 0.16f)
+                        val idle = Color(0xFF2A2A2A)
                         val labelColor = Color.White.copy(alpha = 0.85f)
-                        val dark = Color(0xFF0B1220)
+                        val dark = Color.Black
                         val micOff = !state.micActive || state.micMuted
 
                         RoundAction(
@@ -469,9 +492,9 @@ private fun SharingCard(peer: String, onStop: () -> Unit) {
         label = "blink",
     )
     Surface(
-        color = Brand.Red.copy(alpha = 0.22f),
+        color = Color(0xFF1C1C1C),
         shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, Brand.Red.copy(alpha = 0.6f)),
+        border = BorderStroke(1.dp, Color(0xFF333333)),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
@@ -499,7 +522,7 @@ private fun SharingCard(peer: String, onStop: () -> Unit) {
 
 @Composable
 private fun Banner(text: String, action: String, onAction: () -> Unit) {
-    Surface(color = Color.White.copy(alpha = 0.14f), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = Color(0xFF1C1C1C), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Row(
             Modifier.padding(start = 14.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -511,7 +534,7 @@ private fun Banner(text: String, action: String, onAction: () -> Unit) {
                 textAlign = TextAlign.Start,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = onAction) { Text(action, color = Color(0xFF8FC0FF)) }
+            TextButton(onClick = onAction) { Text(action, color = Color.White) }
         }
     }
 }

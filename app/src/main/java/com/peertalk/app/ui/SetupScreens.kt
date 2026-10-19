@@ -93,8 +93,8 @@ fun HomeScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Box(Modifier.size(44.dp).background(cs.secondaryContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Public, contentDescription = null, tint = cs.onSecondaryContainer)
+                Box(Modifier.size(44.dp).background(cs.surfaceVariant, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Public, contentDescription = null, tint = cs.onSurface)
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Connect over the internet", style = MaterialTheme.typography.titleSmall)
@@ -121,26 +121,19 @@ fun HomeScreen(
 
 @Composable
 private fun Hero() {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
-            .background(Brush.linearGradient(listOf(Brand.Blue, Brand.Cyan)))
-            .padding(24.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Image(
-                painter = painterResource(R.drawable.pt_logo),
-                contentDescription = "PeerTalk logo",
-                modifier = Modifier.size(72.dp).clip(RoundedCornerShape(18.dp)),
-            )
-            Text("PeerTalk", style = MaterialTheme.typography.headlineLarge, color = Color.White)
-            Text(
-                "Private chat, calls, screen sharing and files straight between two phones. No account, no server.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color.White.copy(alpha = 0.9f),
-            )
-        }
+    val cs = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Image(
+            painter = painterResource(R.drawable.pt_logo),
+            contentDescription = "PeerTalk logo",
+            modifier = Modifier.size(72.dp).clip(RoundedCornerShape(18.dp)),
+        )
+        Text("PeerTalk", style = MaterialTheme.typography.headlineLarge, color = cs.onBackground)
+        Text(
+            "Private chat, calls, screen sharing and files straight between two phones. No account, no server.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = cs.onSurfaceVariant,
+        )
     }
 }
 
@@ -148,24 +141,27 @@ private fun Hero() {
 private fun ActionCard(icon: ImageVector, title: String, subtitle: String, filled: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(20.dp)
+    val container = if (filled) cs.primary else cs.surface
+    val content = if (filled) cs.onPrimary else cs.onSurface
     Surface(
         shape = shape,
-        color = if (filled) cs.primaryContainer else cs.surface,
-        border = if (filled) null else BorderStroke(1.dp, cs.outlineVariant),
+        color = container,
+        contentColor = content,
+        border = if (filled) null else BorderStroke(1.dp, cs.outline),
         modifier = Modifier.fillMaxWidth().clip(shape).clickable(onClick = onClick),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(
-                Modifier.size(48.dp).background(if (filled) cs.primary else cs.surfaceVariant, RoundedCornerShape(14.dp)),
+                Modifier.size(48.dp).background(content.copy(alpha = 0.12f), RoundedCornerShape(14.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(icon, contentDescription = null, tint = if (filled) cs.onPrimary else cs.primary)
+                Icon(icon, contentDescription = null)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = content.copy(alpha = 0.72f))
             }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = cs.onSurfaceVariant)
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = content.copy(alpha = 0.72f))
         }
     }
 }

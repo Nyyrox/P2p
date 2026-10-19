@@ -42,11 +42,24 @@ other way to carry them. After connecting nothing else is needed.
 - Everyone can share their screen and use their camera at the same time; the screen takes the main stage and the
   camera becomes a small picture-in-picture.
 
+## Minimise and maximise a call
+
+- Tap the **down arrow** (or press Back) on the call screen: you return to the chat and the call keeps running.
+  A bar at the top of the chat shows the call and timer, with mute and end buttons. Tap it to maximise again.
+- Press **Home** during a call and Android shows it in a small floating **picture-in-picture** window; tap the
+  window to expand it. (Needs "picture-in-picture" allowed for the app in Android settings.)
+
+## Design
+
+Plain black and white, light and dark following the system, no gradients and no accent colours. Green, amber and
+red appear only as status colours (online dot, accept / decline / end).
+
 ## How media is wired
 
 Three media lines are negotiated once (audio, camera, screen), all send/receive. Their senders stay empty until
 needed, so starting or stopping mic, camera or screen share never needs a new code exchange.
-Video uses software VP8 on both phones. Hardware H.264 encoders differ a lot between devices and were the most
+Video is drawn with a TextureView-based renderer (`ui/VideoTextureRenderer.kt`), because a SurfaceView goes black inside
+Compose clips, fades and rounded corners. Video uses software VP8 on both phones. Hardware H.264 encoders differ a lot between devices and were the most
 likely reason screen share worked on one phone and showed nothing on another. The viewer also keeps the last
 received frame, so a still screen (which sends no new frames) is not black after the view is recreated.
 
@@ -73,7 +86,7 @@ also appear as a banner on the call screen.
 | `ui/SetupScreens.kt` | Home, create (host), join (guest), ended |
 | `ui/ChatScreen.kt` | Chat, name editing, call button, ringing banner, incoming-call card |
 | `ui/CallScreen.kt` | In-call UI (stage, camera preview, screen-share viewer); the only place mic / camera are requested |
-| `ui/VideoViews.kt` | SurfaceViewRenderer wrapper (fit / fill, mirror, first-frame callback) |
+| `ui/VideoViews.kt`, `ui/VideoTextureRenderer.kt` | Compose video view on a TextureView renderer (fit / fill, mirror, first-frame callback) |
 | `rtc/VideoRelay.kt` | Fan-out of video frames to renderers, replays the last frame to late joiners |
 
 ## Notes

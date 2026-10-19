@@ -16,18 +16,16 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.peertalk.app.rtc.VideoRelay
 import org.webrtc.EglBase
 import org.webrtc.RendererCommon
-import org.webrtc.SurfaceViewRenderer
 
 /**
- * Draws a [VideoRelay] on a SurfaceViewRenderer.
+ * Draws a [VideoRelay] on a [VideoTextureRenderer].
  *
  *  - [fit] = true letterboxes (whole picture visible, right for screen shares);
  *    false fills and crops (right for faces).
- *  - [overlay] puts the surface above other surfaces (small picture-in-picture previews).
- *  - [onFirstFrame] fires once the first picture is on screen, so callers can hide a spinner.
+ *  - [onFirstFrame] fires once the first picture is handed to the renderer, so callers can hide a spinner.
  *
- * The relay replays its last frame on attach, so a re-created view is not black while the
- * remote screen is still.
+ * The relay replays its last frame when a renderer attaches and again when its surface becomes
+ * ready, so a re-created view is not black while the remote screen is still.
  */
 @Composable
 fun VideoView(
@@ -36,33 +34,27 @@ fun VideoView(
     modifier: Modifier = Modifier,
     fit: Boolean = false,
     mirror: Boolean = false,
-    overlay: Boolean = false,
     onFirstFrame: () -> Unit = {},
 ) {
     val firstFrame by rememberUpdatedState(onFirstFrame)
-    var view by remember { mutableStateOf<SurfaceViewRenderer?>(null) }
+    val currentRelay by rememberUpdatedState(relay)
+    var view by remember { mutableStateOf<VideoTextureRenderer?>(null) }
 
-    // For "fit", the renderer must be allowed to shrink to the picture's aspect ratio (wrap content);
+    // For "fit" the renderer must be allowed to shrink to the picture's aspect ratio (wrap content);
     // for "fill" it takes all the space and crops.
     Box(modifier, contentAlignment = Alignment.Center) {
         AndroidView(
             modifier = if (fit) Modifier.wrapContentSize() else Modifier.fillMaxSize(),
             factory = { ctx ->
-                SurfaceViewRenderer(ctx).apply {
-                    init(
-                        eglBase.eglBaseContext,
-                        object : RendererCommon.RendererEvents {
-                            override fun onFirstFrameRendered() { post { firstFrame() } }
-                            override fun onFrameResolutionChanged(videoWidth: Int, videoHeight: Int, rotation: Int) {}
-                        },
-                    )
-                    setEnableHardwareScaler(true)
-                    setZOrderMediaOverlay(overlay)
+                VideoTextureRenderer(ctx).apply {
+                    init(eglBase.eglBaseContext)
+                    onFirstFrame = { firstFrame() }
+                    onSurfaceReady = { currentRelay?.replay(this) }
                     view = this
                 }
             },
             update = { v ->
-                v.setScalingType(
+                v.setScaling(
                     if (fit) RendererCommon.ScalingType.SCALE_ASPECT_FIT
                     else RendererCommon.ScalingType.SCALE_ASPECT_FILL,
                 )

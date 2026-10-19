@@ -34,6 +34,11 @@ class VideoRelay(private val cache: Boolean) : VideoSink {
         if (cache) synchronized(lock) { last?.let { sink.onFrame(it) } }
     }
 
+    /** Draw the cached frame again, e.g. once a renderer's surface has actually become available. */
+    fun replay(sink: VideoSink) {
+        if (cache) synchronized(lock) { last?.let { sink.onFrame(it) } }
+    }
+
     fun removeSink(sink: VideoSink) {
         sinks.remove(sink)
     }

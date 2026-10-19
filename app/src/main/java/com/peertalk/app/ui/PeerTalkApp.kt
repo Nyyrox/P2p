@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -26,21 +27,26 @@ private enum class Screen { HOME, HOST, JOIN, CHAT, CALL, ENDED }
  * and it is the only place the microphone permission is requested.
  */
 @Composable
-fun PeerTalkApp(engine: PeerEngine) {
+fun PeerTalkApp(engine: PeerEngine, inPip: Boolean = false) {
     val state by engine.state.collectAsStateWithLifecycle()
 
     var mode by rememberSaveable { mutableStateOf(Mode.HOME) }
     var useStun by rememberSaveable { mutableStateOf(true) }
     var name by rememberSaveable { mutableStateOf(state.myName) }
+    // While true the call keeps running and the chat shows a "tap to return" bar.
+    var callMinimized by rememberSaveable { mutableStateOf(false) }
 
     val screen = when {
         state.phase == Phase.ENDED -> Screen.ENDED
-        state.phase == Phase.CONNECTED && state.callPhase == CallPhase.ACTIVE -> Screen.CALL
+        state.phase == Phase.CONNECTED && state.callPhase == CallPhase.ACTIVE && (inPip || !callMinimized) -> Screen.CALL
         state.phase == Phase.CONNECTED -> Screen.CHAT
         mode == Mode.HOST -> Screen.HOST
         mode == Mode.JOIN -> Screen.JOIN
         else -> Screen.HOME
     }
+
+    LaunchedEffect(state.callPhase) { if (state.callPhase != CallPhase.ACTIVE) callMinimized = false }
+    LaunchedEffect(inPip) { if (inPip) callMinimized = false }
 
     val backToHome = { engine.reset(); mode = Mode.HOME }
     BackHandler(enabled = screen == Screen.HOST || screen == Screen.JOIN) { backToHome() }
@@ -74,8 +80,9 @@ fun PeerTalkApp(engine: PeerEngine) {
                     engine = engine,
                     state = state,
                     onLeave = { engine.hangUp(); mode = Mode.HOME },
+                    onReturnToCall = { callMinimized = false },
                 )
-                Screen.CALL -> CallScreen(engine = engine, state = state)
+                Screen.CALL -> CallScreen(engine = engine, state = state, pip = inPip, onMinimize = { callMinimized = true })
                 Screen.ENDED -> EndedScreen(state.endedReason, onBack = backToHome)
             }
         }
