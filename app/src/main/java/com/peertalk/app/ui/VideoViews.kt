@@ -48,8 +48,9 @@ fun VideoView(
             factory = { ctx ->
                 VideoTextureRenderer(ctx).apply {
                     init(eglBase.eglBaseContext)
-                    onFirstFrame = { firstFrame() }
-                    onSurfaceReady = { currentRelay?.replay(this) }
+                    // `this.` matters: the VideoView parameter of the same name would otherwise win.
+                    this.onFirstFrame = { firstFrame() }
+                    this.onSurfaceReady = { currentRelay?.replay(this) }
                     view = this
                 }
             },
